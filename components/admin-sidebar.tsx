@@ -7,9 +7,27 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Home,
@@ -73,7 +91,7 @@ const navSections: NavSection[] = [
       },
       {
         title: "Exam Schedule",
-        href: "/admin/exam-manage",
+        href: "/admin/exam-management",
         icon: Calendar,
         description: "Schedule and manage exams",
       },
@@ -115,7 +133,7 @@ interface AdminSidebarProps {
   onCollapse?: (collapsed: boolean) => void;
 }
 
-export const AdminSidebar = memo(function AdminSidebar({ 
+export const AdminSidebar = memo(function AdminSidebar({
   className,
   collapsed = false,
 }: AdminSidebarProps) {
@@ -123,7 +141,9 @@ export const AdminSidebar = memo(function AdminSidebar({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [admin, setAdmin] = useState<Admin | null>(null);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["Main", "Management"]));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set(["Main", "Management"])
+  );
   const router = useRouter();
   const pathname = usePathname();
 
@@ -132,15 +152,17 @@ export const AdminSidebar = memo(function AdminSidebar({
     const loadAdmin = () => {
       try {
         const adminCookie = document.cookie
-          .split('; ')
-          .find(row => row.startsWith('admin='));
-        
+          .split("; ")
+          .find((row) => row.startsWith("admin="));
+
         if (adminCookie) {
-          const adminData = JSON.parse(decodeURIComponent(adminCookie.split('=')[1])) as Admin;
+          const adminData = JSON.parse(
+            decodeURIComponent(adminCookie.split("=")[1])
+          ) as Admin;
           setAdmin(adminData);
         }
       } catch (error) {
-        console.error('Failed to load admin data:', error);
+        console.error("Failed to load admin data:", error);
       }
     };
     loadAdmin();
@@ -172,9 +194,8 @@ export const AdminSidebar = memo(function AdminSidebar({
     return pathname === href || pathname.startsWith(href + "/");
   };
 
-
   const toggleSection = (sectionTitle: string) => {
-    setExpandedSections(prev => {
+    setExpandedSections((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(sectionTitle)) {
         newSet.delete(sectionTitle);
@@ -190,16 +211,23 @@ export const AdminSidebar = memo(function AdminSidebar({
     return admin.email.substring(0, 2).toUpperCase();
   };
 
-  const NavItemComponent = ({ item, isCollapsed = false }: { item: NavItem; isCollapsed?: boolean }) => {
+  const NavItemComponent = ({
+    item,
+    isCollapsed = false,
+  }: {
+    item: NavItem;
+    isCollapsed?: boolean;
+  }) => {
     const Icon = item.icon;
     const active = isActive(item.href);
-    
+
     const buttonContent = (
       <Button
         variant={active ? "secondary" : "ghost"}
         className={cn(
           "w-full justify-start gap-3 h-12 text-left transition-all duration-200 hover:bg-accent/50",
-          active && "bg-primary/10 text-primary border border-primary/20 shadow-sm font-medium",
+          active &&
+            "bg-primary/10 text-primary border border-primary/20 shadow-sm font-medium",
           isCollapsed && "px-2 justify-center"
         )}
         onClick={() => {
@@ -218,7 +246,9 @@ export const AdminSidebar = memo(function AdminSidebar({
                 </div>
               )}
             </div>
-            {active && <ChevronRight className="h-4 w-4 shrink-0 text-primary" />}
+            {active && (
+              <ChevronRight className="h-4 w-4 shrink-0 text-primary" />
+            )}
           </>
         )}
       </Button>
@@ -228,10 +258,11 @@ export const AdminSidebar = memo(function AdminSidebar({
       return (
         <TooltipProvider delayDuration={0}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              {buttonContent}
-            </TooltipTrigger>
-            <TooltipContent side="right" className="bg-popover border shadow-md">
+            <TooltipTrigger asChild>{buttonContent}</TooltipTrigger>
+            <TooltipContent
+              side="right"
+              className="bg-popover border shadow-md"
+            >
               <div className="font-medium">{item.title}</div>
               {item.description && (
                 <div className="text-xs text-muted-foreground mt-0.5">
@@ -248,13 +279,19 @@ export const AdminSidebar = memo(function AdminSidebar({
   };
 
   // Desktop sidebar content
-  const SidebarContent = ({ isCollapsed = false }: { isCollapsed?: boolean }) => (
+  const SidebarContent = ({
+    isCollapsed = false,
+  }: {
+    isCollapsed?: boolean;
+  }) => (
     <div className="flex h-full flex-col bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       {/* Header */}
-      <div className={cn(
-        "flex h-16 items-center border-b bg-background/50 backdrop-blur",
-        isCollapsed ? "justify-center px-2" : "justify-between px-4"
-      )}>
+      <div
+        className={cn(
+          "flex h-16 items-center border-b bg-background/50 backdrop-blur",
+          isCollapsed ? "justify-center px-2" : "justify-between px-4"
+        )}
+      >
         {!isCollapsed && (
           <div className="flex items-center gap-2">
             <Shield className="h-6 w-6 text-primary" />
@@ -268,14 +305,13 @@ export const AdminSidebar = memo(function AdminSidebar({
 
       {/* Admin Profile Section */}
       {admin && (
-        <div className={cn(
-          "p-4 border-b bg-accent/20",
-          isCollapsed && "p-2"
-        )}>
-          <div className={cn(
-            "flex items-center gap-3",
-            isCollapsed && "justify-center"
-          )}>
+        <div className={cn("p-4 border-b bg-accent/20", isCollapsed && "p-2")}>
+          <div
+            className={cn(
+              "flex items-center gap-3",
+              isCollapsed && "justify-center"
+            )}
+          >
             <Avatar className="h-10 w-10 ring-2 ring-primary/20">
               <AvatarImage src="" alt={admin.email} />
               <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
@@ -284,7 +320,9 @@ export const AdminSidebar = memo(function AdminSidebar({
             </Avatar>
             {!isCollapsed && (
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">Administrator</div>
+                <div className="font-medium text-sm truncate">
+                  Administrator
+                </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {admin.email}
                 </div>
@@ -300,7 +338,7 @@ export const AdminSidebar = memo(function AdminSidebar({
           {navSections.map((section) => (
             <div key={section.title} className="space-y-1">
               {!isCollapsed && (
-                <Collapsible 
+                <Collapsible
                   open={expandedSections.has(section.title)}
                   onOpenChange={() => toggleSection(section.title)}
                 >
@@ -309,16 +347,22 @@ export const AdminSidebar = memo(function AdminSidebar({
                       variant="ghost"
                       className="w-full justify-start gap-2 h-8 text-xs font-medium text-muted-foreground hover:text-foreground px-2"
                     >
-                      <ChevronDown className={cn(
-                        "h-3 w-3 transition-transform duration-200",
-                        !expandedSections.has(section.title) && "-rotate-90"
-                      )} />
+                      <ChevronDown
+                        className={cn(
+                          "h-3 w-3 transition-transform duration-200",
+                          !expandedSections.has(section.title) && "-rotate-90"
+                        )}
+                      />
                       {section.title}
                     </Button>
                   </CollapsibleTrigger>
                   <CollapsibleContent className="space-y-1">
                     {section.items.map((item) => (
-                      <NavItemComponent key={item.href} item={item} isCollapsed={isCollapsed} />
+                      <NavItemComponent
+                        key={item.href}
+                        item={item}
+                        isCollapsed={isCollapsed}
+                      />
                     ))}
                   </CollapsibleContent>
                 </Collapsible>
@@ -326,7 +370,11 @@ export const AdminSidebar = memo(function AdminSidebar({
               {isCollapsed && (
                 <div className="space-y-1">
                   {section.items.map((item) => (
-                    <NavItemComponent key={item.href} item={item} isCollapsed={isCollapsed} />
+                    <NavItemComponent
+                      key={item.href}
+                      item={item}
+                      isCollapsed={isCollapsed}
+                    />
                   ))}
                 </div>
               )}
@@ -358,7 +406,10 @@ export const AdminSidebar = memo(function AdminSidebar({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="bg-popover border shadow-md">
+              <TooltipContent
+                side="right"
+                className="bg-popover border shadow-md"
+              >
                 <div className="font-medium">Log Out</div>
                 <div className="text-xs text-muted-foreground mt-0.5">
                   Sign out of admin panel
@@ -417,19 +468,23 @@ export const AdminSidebar = memo(function AdminSidebar({
       </div>
 
       {/* Desktop Sidebar */}
-      <div className={cn(
-        "hidden lg:flex fixed left-0 top-0 z-30 h-full border-r shadow-sm transition-all duration-300 ease-in-out",
-        collapsed ? "w-16" : "w-72",
-        className
-      )}>
+      <div
+        className={cn(
+          "hidden lg:flex fixed left-0 top-0 z-30 h-full border-r shadow-sm transition-all duration-300 ease-in-out",
+          collapsed ? "w-16" : "w-72",
+          className
+        )}
+      >
         <SidebarContent isCollapsed={collapsed} />
       </div>
 
       {/* Main content spacer for desktop */}
-      <div className={cn(
-        "hidden lg:block shrink-0 transition-all duration-300 ease-in-out",
-        collapsed ? "w-16" : "w-72"
-      )} />
+      <div
+        className={cn(
+          "hidden lg:block shrink-0 transition-all duration-300 ease-in-out",
+          collapsed ? "w-16" : "w-72"
+        )}
+      />
 
       {/* Logout Confirmation Dialog */}
       <AlertDialog open={showLogoutDialog} onOpenChange={setShowLogoutDialog}>
@@ -440,7 +495,8 @@ export const AdminSidebar = memo(function AdminSidebar({
               Confirm Logout
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to log out of the admin panel? You&apos;ll need to log in again to access the dashboard.
+              Are you sure you want to log out of the admin panel? You&apos;ll
+              need to log in again to access the dashboard.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -471,7 +527,7 @@ export const AdminSidebar = memo(function AdminSidebar({
 // Hook for easier integration in admin pages
 export function useAdminSidebar() {
   const [collapsed, setCollapsed] = useState(false);
-  
+
   return {
     AdminSidebar,
     collapsed,
