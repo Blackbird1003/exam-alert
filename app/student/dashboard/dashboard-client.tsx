@@ -1,12 +1,14 @@
 "use client";
 
 import { Student } from "@/app/generated/prisma";
-import { getStudentExams } from "../actions";
+import { getStudentExams, getStudentNotifications } from "../actions";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { StudentLayout } from "@/components/student-layout";
+import { Badge } from "@/components/ui/badge";
+import { Bell, Clock } from "lucide-react";
 
 
 type ExamData = {
@@ -35,30 +37,43 @@ const bgColors = [
 export default function DashboardClient({ student }: { student: Student }) {
   const router = useRouter();
   const [exams, setExams] = useState<ExamData[]>([]);
+  const [notifications, setNotifications] = useState<unknown[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    async function fetchExams() {
+    async function fetchData() {
       try {
         setLoading(true);
-        const result = await getStudentExams();
-        if (result.success) {
-          setExams(result.exams);
+        
+        // Fetch both exams and notifications in parallel
+        const [examsResult, notificationsResult] = await Promise.all([
+          getStudentExams(),
+          getStudentNotifications()
+        ]);
+        
+        if (examsResult.success) {
+          setExams(examsResult.exams);
           setError(null);
         } else {
-          setError(result.message);
-          toast.error(result.message);
+          setError(examsResult.message);
+          toast.error(examsResult.message);
+        }
+
+        if (notificationsResult.success) {
+          setNotifications(notificationsResult.notifications);
+          setUnreadCount(notificationsResult.unreadCount || 0);
         }
       } catch (error) {
-        setError("Failed to load exams");
-        toast.error("Failed to load exams");
+        setError("Failed to load data");
+        toast.error("Failed to load dashboard data");
       } finally {
         setLoading(false);
       }
     }
 
-    fetchExams();
+    fetchData();
   }, []);
 
   // Logout function can be implemented later if needed
@@ -72,16 +87,37 @@ export default function DashboardClient({ student }: { student: Student }) {
   //   }
   // };
 
+  // Helper function to check if exam is upcoming (within next 7 days)
+  const isUpcomingExam = (examDate: Date | null) => {
+    if (!examDate) return false;
+    const exam = new Date(examDate);
+    const now = new Date();
+    const weekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return exam >= now && exam <= weekFromNow;
+  };
+
   return (
     <StudentLayout>
       <div className="min-h-screen  px-4 py-6">
         <header className="">
-          <h1 className="text-xl md:text-2xl font-bold">
-            Welcome, {student.firstName}!
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            Your upcoming exams are listed below
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl md:text-2xl font-bold">
+                Welcome, {student.firstName}!
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                Your upcoming exams are listed below
+              </p>
+            </div>
+            {unreadCount > 0 && (
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-blue-600" />
+                <Badge variant="secondary" className="bg-blue-100 text-blue-600">
+                  {unreadCount} new notifications
+                </Badge>
+              </div>
+            )}
+          </div>
         </header>
 
         {/* Loading State */}
@@ -121,19 +157,31 @@ export default function DashboardClient({ student }: { student: Student }) {
               const examDate = exam.examDate ? new Date(exam.examDate).toLocaleDateString() : 'TBD';
               const examTime = exam.examTime || 'TBD';
               const hallName = exam.hall?.name || 'TBD';
+              const isUpcoming = isUpcomingExam(exam.examDate);
               
               return (
                 <div
                   key={exam.id}
-                  className={`rounded-xl p-4 shadow-md ${bgColor} cursor-pointer hover:shadow-lg transition`}
+                  className={`rounded-xl p-4 shadow-md ${bgColor} cursor-pointer hover:shadow-lg transition relative`}
                   onClick={() => router.push(`/student/exam-details?id=${exam.id}`)}
                 >
+                  {isUpcoming && (
+                    <Badge className="absolute top-2 right-2 bg-red-100 text-red-600 border-red-200">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Upcoming
+                    </Badge>
+                  )}
                   <p className="text-sm text-gray-600">
                     {examDate} • {examTime}
                   </p>
                   <h2 className="text-lg font-bold mt-1">{exam.courseCode}</h2>
                   <p className="text-sm text-gray-600 mb-1">{exam.courseTitle}</p>
                   <p className="text-gray-700">{hallName}</p>
+                  {examDate !== 'TBD' && (
+                    <p className="text-xs text-gray-500 mt-2">
+                      Session: {exam.timeTableSession}
+                    </p>
+                  )}
                 </div>
               );
             })}

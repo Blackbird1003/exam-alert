@@ -123,3 +123,134 @@ export async function getStudentExamById(courseId: string) {
         return { success: false, exam: null, message: "Error fetching exam details" };
     }
 }
+
+export async function getStudentProfile() {
+    const student = await getStudent();
+    
+    if (!student) {
+        return { success: false, profile: null, message: "Not authenticated" };
+    }
+
+    try {
+        return { 
+            success: true, 
+            profile: {
+                id: student.id,
+                firstName: student.firstName,
+                lastName: student.lastName,
+                matricNumber: student.matricNumber,
+                phone: student.phone,
+                email: student.email,
+                faculty: student.faculty,
+                department: student.department,
+                level: student.level,
+            },
+            message: "Profile fetched successfully" 
+        };
+    } catch (error) {
+        console.error("Error fetching student profile:", error);
+        return { success: false, profile: null, message: "Error fetching profile" };
+    }
+}
+
+export async function updateStudentProfile(profileData: {
+    firstName: string;
+    lastName: string;
+    phone: string;
+    email: string;
+    faculty: string;
+    department: string;
+    level: string;
+}) {
+    const student = await getStudent();
+    
+    if (!student) {
+        return { success: false, message: "Not authenticated" };
+    }
+
+    try {
+        // Check if email is already taken by another student
+        if (profileData.email !== student.email) {
+            const existingStudent = await prisma.student.findFirst({
+                where: {
+                    email: profileData.email,
+                    NOT: { id: student.id }
+                }
+            });
+
+            if (existingStudent) {
+                return { success: false, message: "Email is already taken by another student" };
+            }
+        }
+
+        // Update the student profile
+        const updatedStudent = await prisma.student.update({
+            where: { id: student.id },
+            data: {
+                firstName: profileData.firstName,
+                lastName: profileData.lastName,
+                phone: profileData.phone,
+                email: profileData.email,
+                faculty: profileData.faculty,
+                department: profileData.department,
+                level: profileData.level,
+            }
+        });
+
+        return { 
+            success: true, 
+            profile: {
+                id: updatedStudent.id,
+                firstName: updatedStudent.firstName,
+                lastName: updatedStudent.lastName,
+                matricNumber: updatedStudent.matricNumber,
+                phone: updatedStudent.phone,
+                email: updatedStudent.email,
+                faculty: updatedStudent.faculty,
+                department: updatedStudent.department,
+                level: updatedStudent.level,
+            },
+            message: "Profile updated successfully" 
+        };
+    } catch (error) {
+        console.error("Error updating student profile:", error);
+        return { success: false, message: "Error updating profile" };
+    }
+}
+
+export async function getStudentNotifications() {
+    const student = await getStudent();
+    
+    if (!student) {
+        return { success: false, notifications: [], message: "Not authenticated" };
+    }
+
+    try {
+        const notifications = await prisma.notification.findMany({
+            where: { recipientId: student.id },
+            orderBy: { createdAt: 'desc' },
+            take: 10 // Get latest 10 notifications
+        });
+
+        // Count unread notifications (sent in the last 7 days and status is "sent")
+        const recentNotifications = await prisma.notification.count({
+            where: {
+                recipientId: student.id,
+                status: "sent",
+                sentAt: {
+                    gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), // Last 7 days
+                }
+            }
+        });
+
+        return { 
+            success: true, 
+            notifications,
+            unreadCount: recentNotifications,
+            message: "Notifications fetched successfully" 
+        };
+    } catch (error) {
+        console.error("Error fetching student notifications:", error);
+        return { success: false, notifications: [], unreadCount: 0, message: "Error fetching notifications" };
+    }
+}

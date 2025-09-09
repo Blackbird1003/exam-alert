@@ -1,23 +1,56 @@
 "use client";
-import { User, ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { User } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { StudentLayout } from "@/components/student-layout";
+import { getStudentProfile, updateStudentProfile } from "../../actions";
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState({
-    firstName: "Motun",
-    lastName: "Rayo",
-    matricNumber: "012345678",
-    phoneNumber: "+234 801 2345 678",
-    email: "bulalabu@school.ng",
-    faculty: "Faculty of Science",
-    department: "Computer Science Department",
-    level: "100 Level",
+    firstName: "",
+    lastName: "",
+    matricNumber: "",
+    phone: "",
+    email: "",
+    faculty: "",
+    department: "",
+    level: "",
     profileImage: null as File | null,
   });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    async function fetchProfile() {
+      try {
+        setLoading(true);
+        const result = await getStudentProfile();
+        if (result.success && result.profile) {
+          setProfile({
+            firstName: result.profile.firstName,
+            lastName: result.profile.lastName,
+            matricNumber: result.profile.matricNumber,
+            phone: result.profile.phone,
+            email: result.profile.email,
+            faculty: result.profile.faculty,
+            department: result.profile.department,
+            level: result.profile.level,
+            profileImage: null,
+          });
+        } else {
+          toast.error(result.message || "Failed to load profile");
+        }
+      } catch (error) {
+        toast.error("Failed to load profile");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchProfile();
+  }, []);
 
   const handleProfileChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -33,12 +66,52 @@ export default function ProfilePage() {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Send to API later
-    console.log("Profile Submitted:", profile);
-    toast.success("Profile updated successfully!");
+    
+    try {
+      setSaving(true);
+      const result = await updateStudentProfile({
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phone: profile.phone,
+        email: profile.email,
+        faculty: profile.faculty,
+        department: profile.department,
+        level: profile.level,
+      });
+
+      if (result.success) {
+        toast.success(result.message || "Profile updated successfully!");
+        if (result.profile) {
+          setProfile(prev => ({
+            ...prev,
+            ...result.profile
+          }));
+        }
+      } else {
+        toast.error(result.message || "Failed to update profile");
+      }
+    } catch (error) {
+      toast.error("Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <StudentLayout>
+        <div className="min-h-screen bg-white px-4 pt-6 pb-12 text-sm">
+          <div className="max-w-6xl mx-auto p-4 space-y-6">
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading your profile...</p>
+            </div>
+          </div>
+        </div>
+      </StudentLayout>
+    );
+  }
 
   return (
     <StudentLayout>
@@ -55,9 +128,9 @@ export default function ProfilePage() {
                 name="profileImage"
                 className="hidden "
                 onChange={handleProfileChange}
+                disabled={saving}
               />
               <div className="w-20 h-20 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 mb-1">
-                {/* You can show preview here later */}
                 <User className="h-6 w-6 text-gray-700" />
               </div>
               <p className="text-xs text-purple-600 underline">
@@ -74,7 +147,9 @@ export default function ProfilePage() {
                 name="firstName"
                 value={profile.firstName}
                 onChange={handleProfileChange}
-                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+                disabled={saving}
+                required
+                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
               />
             </div>
             <div>
@@ -83,7 +158,9 @@ export default function ProfilePage() {
                 name="lastName"
                 value={profile.lastName}
                 onChange={handleProfileChange}
-                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+                disabled={saving}
+                required
+                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
               />
             </div>
 
@@ -92,18 +169,21 @@ export default function ProfilePage() {
               <input
                 name="matricNumber"
                 value={profile.matricNumber}
-                onChange={handleProfileChange}
-                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+                readOnly
+                className="w-100 px-3 py-2 rounded-lg bg-gray-200 focus:outline-none cursor-not-allowed"
+                title="Matric number cannot be changed"
               />
             </div>
 
             <div>
               <label className="block text-gray-600 mb-1">Phone Number</label>
               <input
-                name="phoneNumber"
-                value={profile.phoneNumber}
+                name="phone"
+                value={profile.phone}
                 onChange={handleProfileChange}
-                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+                disabled={saving}
+                required
+                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
               />
             </div>
 
@@ -114,56 +194,60 @@ export default function ProfilePage() {
                 type="email"
                 value={profile.email}
                 onChange={handleProfileChange}
-                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+                disabled={saving}
+                required
+                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
               />
             </div>
 
             <div>
               <label className="block text-gray-600 mb-1">Faculty</label>
-
-              <select
-                className="input w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none "
+              <input
                 name="faculty"
                 value={profile.faculty}
                 onChange={handleProfileChange}
-              >
-                <option>Faculty of Science</option>
-                <option>Faculty of Arts</option>
-              </select>
+                disabled={saving}
+                required
+                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
+              />
             </div>
 
             <div>
               <label className="block text-gray-600 mb-1">Department</label>
-              <select
-                className="input w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+              <input
                 name="department"
                 value={profile.department}
                 onChange={handleProfileChange}
-              >
-                <option>Computer Science Department</option>
-                <option>Mathematics Department</option>
-              </select>
+                disabled={saving}
+                required
+                className="w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
+              />
             </div>
             <div>
               <label className="block text-gray-600 mb-1">Level</label>
               <select
-                className="input w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none"
+                className="input w-100 px-3 py-2 rounded-lg bg-gray-100 focus:outline-none disabled:opacity-50"
                 name="level"
                 value={profile.level}
                 onChange={handleProfileChange}
+                disabled={saving}
+                required
               >
-                <option>100 Level</option>
-                <option>200 Level</option>
-                <option>300 Level</option>
-                <option>400 Level</option>
+                <option value="">Select Level</option>
+                <option value="100 Level">100 Level</option>
+                <option value="200 Level">200 Level</option>
+                <option value="300 Level">300 Level</option>
+                <option value="400 Level">400 Level</option>
+                <option value="500 Level">500 Level</option>
               </select>
             </div>
 
             <button
               type="submit"
-              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 w-100"
+              disabled={saving}
+              className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 w-100 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Save Changes
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </form>
         </div>

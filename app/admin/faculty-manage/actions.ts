@@ -306,6 +306,7 @@ export async function autoScheduleExams(timeTableId: string) {
             return {
                 success: false,
                 message: "Timetable not found or exam start date not set",
+                emailsSent: false,
             };
         }
 
@@ -314,6 +315,7 @@ export async function autoScheduleExams(timeTableId: string) {
             return {
                 success: false,
                 message: "No halls available for scheduling",
+                emailsSent: false,
             };
         }
 
@@ -327,6 +329,16 @@ export async function autoScheduleExams(timeTableId: string) {
         
         console.log(`Starting auto-schedule for ${coursesToSchedule.length} courses`);
 
+        if (coursesToSchedule.length === 0) {
+            return {
+                success: false,
+                message: "No courses found that need scheduling",
+                emailsSent: false,
+            };
+        }
+
+        const scheduledCourses = [];
+
         for (const course of coursesToSchedule) {
             const studentsToSchedule = course.numberOfStudents;
             let remainingStudents = studentsToSchedule;
@@ -337,12 +349,7 @@ export async function autoScheduleExams(timeTableId: string) {
 
             // Try to schedule all students for this course
             while (remainingStudents > 0) {
-                let bestSlot: { 
-                    hall: { id: string; name: string; maxCapacity: number; facultyId: string; createdAt: Date; updatedAt: Date }; 
-                    date: Date; 
-                    time: string; 
-                    studentsCanFit: number 
-                } | null = null;
+                let bestSlot: any = null;
 
                 const tempDate = new Date(startDate);
                 let attempts = 0;
@@ -443,6 +450,7 @@ export async function autoScheduleExams(timeTableId: string) {
                     }
                 });
 
+                scheduledCourses.push(course.id);
                 console.log(`Successfully scheduled ${course.courseCode} across ${examSessions.length} session(s)`);
             }
         }
@@ -452,21 +460,50 @@ export async function autoScheduleExams(timeTableId: string) {
         // Log for debugging
         console.log(`Auto-scheduling completed for timetable ${timeTableId}. Processed ${coursesToSchedule.length} courses with ${scheduleConflicts.length} conflicts.`);
         
-        const scheduledCount = coursesToSchedule.length - scheduleConflicts.filter(c => c.includes("Unable to schedule")).length;
+        const scheduledCount = scheduledCourses.length;
+        const emailResults = { successful: 0, failed: 0, total: 0 };
+        
+        // Send emails for successfully scheduled courses if any were scheduled
+        if (scheduledCount > 0) {
+            try {
+                const { sendCourseExamNotification } = await import("../email-notifications/actions");
+                
+                const emailPromises = scheduledCourses.map(async (courseId) => {
+                    return await sendCourseExamNotification(courseId, "SCHEDULE", "Your exam has been scheduled. Please review the details below.");
+                });
+
+                const emailResponses = await Promise.all(emailPromises);
+                
+                // Calculate email statistics
+                emailResults.total = emailResponses.length;
+                emailResults.successful = emailResponses.filter(response => response.success).reduce((sum, response) => sum + (response.stats?.successful || 0), 0);
+                emailResults.failed = emailResponses.filter(response => response.success).reduce((sum, response) => sum + (response.stats?.failed || 0), 0);
+
+                console.log(`Email notifications sent: ${emailResults.successful} successful, ${emailResults.failed} failed`);
+            } catch (emailError) {
+                console.error("Failed to send email notifications:", emailError);
+                scheduleConflicts.push("Email notifications could not be sent automatically");
+            }
+        }
+
         const message = scheduleConflicts.length > 0
-            ? `Auto-scheduling completed: ${scheduledCount} courses scheduled, ${scheduleConflicts.length} issues found.`
-            : `All ${scheduledCount} exams scheduled successfully across multiple halls where needed!`;
+            ? `Auto-scheduling completed: ${scheduledCount} courses scheduled, ${scheduleConflicts.length} issues found. Emails sent to ${emailResults.successful} students.`
+            : `All ${scheduledCount} exams scheduled successfully across multiple halls where needed! Email notifications sent to ${emailResults.successful} students.`;
 
         return {
             success: true,
             message,
             conflicts: scheduleConflicts,
+            emailsSent: emailResults.total > 0,
+            emailStats: emailResults,
+            timeTableId, // Include for redirect purposes
         };
     } catch (error) {
         console.error("Error auto-scheduling exams:", error);
         return {
             success: false,
-            message: "Failed to auto-schedule exams",
+            message: `Failed to auto-schedule exams: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            emailsSent: false,
         };
     }
 }

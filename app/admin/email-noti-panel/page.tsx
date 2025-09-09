@@ -73,7 +73,7 @@ export default function EmailNotificationPanel() {
   const loadStats = async () => {
     try {
       const result = await getNotificationStats();
-      if (result.success) {
+      if (result.success && result.data) {
         setStats(result.data);
       }
     } catch (error) {

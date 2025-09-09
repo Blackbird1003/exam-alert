@@ -9,45 +9,48 @@ import { useEffect, useState } from "react";
 import { Admin } from "@/app/generated/prisma";
 import { NotAuthorized } from "../components/not-autorized";
 import { AdminLayout } from "@/components/admin-layout";
+import { getAdminDashboardStats } from "./actions";
+import { toast } from "sonner";
 
 export function AdminDashboardClient({ admin }: { admin: Admin | null }) {
     const router = useRouter();
     const [stats, setStats] = useState({
-        students: 120,
-        exams: 45,
-        emailsSent: 300,
+        students: 0,
+        exams: 0,
+        emailsSent: 0,
     });
+    const [recentEmails, setRecentEmails] = useState<Array<{
+        id: string;
+        sentTo: string;
+        date: string;
+        content: string;
+        subject: string;
+        type: string;
+    }>>([]);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const fetchFakeStats = async () => {
-            // Simulate network delay
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-
-            // Simulated data (could be from your database later)
-            const fakeData = {
-                students: 150,
-                exams: 50,
-                emailsSent: 340,
-            };
-
-            setStats(fakeData);
+        const fetchRealStats = async () => {
+            try {
+                setLoading(true);
+                const result = await getAdminDashboardStats();
+                
+                if (result.success) {
+                    setStats(result.stats);
+                    setRecentEmails(result.recentEmails);
+                } else {
+                    toast.error(result.message);
+                }
+            } catch (error) {
+                console.error("Failed to fetch dashboard stats:", error);
+                toast.error("Failed to load dashboard data");
+            } finally {
+                setLoading(false);
+            }
         };
 
-        fetchFakeStats();
+        fetchRealStats();
     }, []);
-
-    const recentEmails = [
-        {
-            sentTo: "200 students",
-            date: "25 October 2025",
-            content: "Dear [StudentName], your [CourseTitle] exam holds on [ExamDate] at [ExamTime] in [ExamVenue]. Good luck!",
-        },
-        {
-            sentTo: "150 students",
-            date: "20 October 2025",
-            content: "Reminder: Your [CourseTitle] exam is scheduled for [ExamDate] at [ExamTime].",
-        },
-    ];
 
     if (!admin) {
         return <NotAuthorized />;
@@ -80,7 +83,9 @@ export function AdminDashboardClient({ admin }: { admin: Admin | null }) {
                             <UserIcon className="h-4 w-4 text-yellow-600" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-yellow-700">{stats.students}</div>
+                            <div className="text-2xl font-bold text-yellow-700">
+                                {loading ? "..." : stats.students}
+                            </div>
                             <p className="text-xs text-yellow-600 mt-1">Active students in system</p>
                         </CardContent>
                     </Card>
@@ -91,7 +96,9 @@ export function AdminDashboardClient({ admin }: { admin: Admin | null }) {
                             <CalendarIcon className="h-4 w-4 text-green-600" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-green-700">{stats.exams}</div>
+                            <div className="text-2xl font-bold text-green-700">
+                                {loading ? "..." : stats.exams}
+                            </div>
                             <p className="text-xs text-green-600 mt-1">Upcoming exam schedules</p>
                         </CardContent>
                     </Card>
@@ -102,7 +109,9 @@ export function AdminDashboardClient({ admin }: { admin: Admin | null }) {
                             <MessageSquareIcon className="h-4 w-4 text-blue-600" />
                         </CardHeader>
                         <CardContent>
-                            <div className="text-2xl font-bold text-blue-700">{stats.emailsSent}</div>
+                            <div className="text-2xl font-bold text-blue-700">
+                                {loading ? "..." : stats.emailsSent}
+                            </div>
                             <p className="text-xs text-blue-600 mt-1">Messages sent this month</p>
                         </CardContent>
                     </Card>
@@ -113,17 +122,33 @@ export function AdminDashboardClient({ admin }: { admin: Admin | null }) {
                     <Card>
                         <CardContent className="p-0">
                             <ScrollArea className="h-64 p-4">
-                                <div className="space-y-4">
-                                    {recentEmails.map((email, index) => (
-                                        <div key={index} className="pb-4 border-b last:border-b-0">
-                                            <div className="flex justify-between items-start mb-2">
-                                                <p className="text-sm font-medium">Sent To: {email.sentTo}</p>
-                                                <p className="text-xs text-muted-foreground">{email.date}</p>
+                                {loading ? (
+                                    <div className="text-center py-8">
+                                        <p className="text-muted-foreground">Loading recent emails...</p>
+                                    </div>
+                                ) : recentEmails.length > 0 ? (
+                                    <div className="space-y-4">
+                                        {recentEmails.map((email) => (
+                                            <div key={email.id} className="pb-4 border-b last:border-b-0">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div>
+                                                        <p className="text-sm font-medium">Sent To: {email.sentTo}</p>
+                                                        <p className="text-xs text-blue-600 mt-1 capitalize">
+                                                            {email.type.toLowerCase()}
+                                                        </p>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">{email.date}</p>
+                                                </div>
+                                                <p className="text-sm font-medium mb-1">{email.subject}</p>
+                                                <p className="text-sm text-muted-foreground">{email.content}</p>
                                             </div>
-                                            <p className="text-sm text-muted-foreground">{email.content}</p>
-                                        </div>
-                                    ))}
-                                </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="text-center py-8">
+                                        <p className="text-muted-foreground">No emails sent recently</p>
+                                    </div>
+                                )}
                             </ScrollArea>
                         </CardContent>
                     </Card>
