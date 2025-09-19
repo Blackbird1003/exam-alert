@@ -88,37 +88,37 @@ model TimeTable {
 }
 
 model TimeTableCourse {
-  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  timeTableId      String        @map("time_table_id") @db.Uuid
-  courseCode       String        @map("course_code")
-  courseTitle      String        @map("course_title")
-  courseUnit       Int           @map("course_unit")
-  numberOfStudents Int           @map("number_of_students")
-  examDate         DateTime?     @map("exam_date")
-  examTime         String?       @map("exam_time")
-  duration         Int?          @map("duration")
-  hallId           String?       @map("hall_id") @db.Uuid
-  createdAt        DateTime      @default(dbgenerated("now()")) @map("created_at")
-  updatedAt        DateTime      @default(dbgenerated("now()")) @updatedAt @map("updated_at")
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  timeTableId      String    @map("time_table_id") @db.Uuid
+  courseCode       String    @map("course_code")
+  courseTitle      String    @map("course_title")
+  courseUnit       Int       @map("course_unit")
+  numberOfStudents Int       @map("number_of_students")
+  examDate         DateTime? @map("exam_date")
+  examTime         String?   @map("exam_time")
+  duration         Int?      @map("duration")
+  hallId           String?   @map("hall_id") @db.Uuid
+  createdAt        DateTime  @default(dbgenerated("now()")) @map("created_at")
+  updatedAt        DateTime  @default(dbgenerated("now()")) @updatedAt @map("updated_at")
 
-  timeTable TimeTable     @relation(fields: [timeTableId], references: [id])
-  hall      FacultyHall?  @relation(fields: [hallId], references: [id])
+  timeTable    TimeTable           @relation(fields: [timeTableId], references: [id])
+  hall         FacultyHall?        @relation(fields: [hallId], references: [id])
   examSessions CourseExamSession[]
 
   @@map("time_table_courses")
 }
 
 model CourseExamSession {
-  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  courseId         String        @map("course_id") @db.Uuid
-  hallId           String        @map("hall_id") @db.Uuid
-  examDate         DateTime      @map("exam_date")
-  examTime         String        @map("exam_time")
-  duration         Int           @map("duration")
-  studentsAssigned Int           @map("students_assigned")
-  sessionNumber    Int           @map("session_number") // 1 for first session, 2 for second, etc.
-  createdAt        DateTime      @default(dbgenerated("now()")) @map("created_at")
-  updatedAt        DateTime      @default(dbgenerated("now()")) @updatedAt @map("updated_at")
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  courseId         String   @map("course_id") @db.Uuid
+  hallId           String   @map("hall_id") @db.Uuid
+  examDate         DateTime @map("exam_date")
+  examTime         String   @map("exam_time")
+  duration         Int      @map("duration")
+  studentsAssigned Int      @map("students_assigned")
+  sessionNumber    Int      @map("session_number") // 1 for first session, 2 for second, etc.
+  createdAt        DateTime @default(dbgenerated("now()")) @map("created_at")
+  updatedAt        DateTime @default(dbgenerated("now()")) @updatedAt @map("updated_at")
 
   course TimeTableCourse @relation(fields: [courseId], references: [id], onDelete: Cascade)
   hall   FacultyHall     @relation(fields: [hallId], references: [id])

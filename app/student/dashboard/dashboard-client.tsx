@@ -10,7 +10,6 @@ import { StudentLayout } from "@/components/student-layout";
 import { Badge } from "@/components/ui/badge";
 import { Bell, Clock } from "lucide-react";
 
-
 type ExamData = {
   id: string;
   courseCode: string;
@@ -23,6 +22,16 @@ type ExamData = {
   timeTableName: string;
   timeTableSession: string;
   faculty: string;
+  examSessions?: Array<{
+    id: string;
+    examDate: Date;
+    examTime: string;
+    studentsAssigned: number;
+    sessionNumber: number;
+    hall: {
+      name: string;
+    };
+  }>;
 };
 
 const bgColors = [
@@ -46,13 +55,13 @@ export default function DashboardClient({ student }: { student: Student }) {
     async function fetchData() {
       try {
         setLoading(true);
-        
+
         // Fetch both exams and notifications in parallel
         const [examsResult, notificationsResult] = await Promise.all([
           getStudentExams(),
-          getStudentNotifications()
+          getStudentNotifications(),
         ]);
-        
+
         if (examsResult.success) {
           setExams(examsResult.exams);
           setError(null);
@@ -66,6 +75,7 @@ export default function DashboardClient({ student }: { student: Student }) {
           setUnreadCount(notificationsResult.unreadCount || 0);
         }
       } catch (error) {
+        console.error("Dashboard fetch error:", error);
         setError("Failed to load data");
         toast.error("Failed to load dashboard data");
       } finally {
@@ -75,17 +85,6 @@ export default function DashboardClient({ student }: { student: Student }) {
 
     fetchData();
   }, []);
-
-  // Logout function can be implemented later if needed
-  // const handleLogout = async () => {
-  //   const { success, message } = await studentLogout();
-  //   if (success) {
-  //     toast.success(message);
-  //     router.push("/student/login");
-  //   } else {
-  //     toast.error(message);
-  //   }
-  // };
 
   // Helper function to check if exam is upcoming (within next 7 days)
   const isUpcomingExam = (examDate: Date | null) => {
@@ -98,7 +97,7 @@ export default function DashboardClient({ student }: { student: Student }) {
 
   return (
     <StudentLayout>
-      <div className="min-h-screen  px-4 py-6">
+      <div className="min-h-screen px-4 py-6">
         <header className="">
           <div className="flex items-center justify-between">
             <div>
@@ -112,7 +111,10 @@ export default function DashboardClient({ student }: { student: Student }) {
             {unreadCount > 0 && (
               <div className="flex items-center gap-2">
                 <Bell className="h-4 w-4 text-blue-600" />
-                <Badge variant="secondary" className="bg-blue-100 text-blue-600">
+                <Badge
+                  variant="secondary"
+                  className="bg-blue-100 text-blue-600"
+                >
                   {unreadCount} new notifications
                 </Badge>
               </div>
@@ -131,9 +133,9 @@ export default function DashboardClient({ student }: { student: Student }) {
         {error && !loading && (
           <div className="text-center py-8">
             <p className="text-destructive">{error}</p>
-            <Button 
-              variant="outline" 
-              onClick={() => window.location.reload()} 
+            <Button
+              variant="outline"
+              onClick={() => window.location.reload()}
               className="mt-2"
             >
               Retry
@@ -144,8 +146,12 @@ export default function DashboardClient({ student }: { student: Student }) {
         {/* Empty State */}
         {!loading && !error && exams.length === 0 && (
           <div className="text-center py-8">
-            <p className="text-muted-foreground">No exams scheduled for your faculty.</p>
-            <p className="text-sm text-muted-foreground mt-2">Check back later for updates.</p>
+            <p className="text-muted-foreground">
+              No exams scheduled for your faculty.
+            </p>
+            <p className="text-sm text-muted-foreground mt-2">
+              Check back later for updates.
+            </p>
           </div>
         )}
 
@@ -154,16 +160,20 @@ export default function DashboardClient({ student }: { student: Student }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-5">
             {exams.map((exam, index) => {
               const bgColor = bgColors[index % bgColors.length];
-              const examDate = exam.examDate ? new Date(exam.examDate).toLocaleDateString() : 'TBD';
-              const examTime = exam.examTime || 'TBD';
-              const hallName = exam.hall?.name || 'TBD';
+              const examDate = exam.examDate
+                ? new Date(exam.examDate).toLocaleDateString()
+                : "TBD";
+              const examTime = exam.examTime || "TBD";
+              const hallName = exam.hall?.name || "TBD";
               const isUpcoming = isUpcomingExam(exam.examDate);
-              
+
               return (
                 <div
                   key={exam.id}
                   className={`rounded-xl p-4 shadow-md ${bgColor} cursor-pointer hover:shadow-lg transition relative`}
-                  onClick={() => router.push(`/student/exam-details?id=${exam.id}`)}
+                  onClick={() =>
+                    router.push(`/student/exam-details?id=${exam.id}`)
+                  }
                 >
                   {isUpcoming && (
                     <Badge className="absolute top-2 right-2 bg-red-100 text-red-600 border-red-200">
@@ -171,15 +181,25 @@ export default function DashboardClient({ student }: { student: Student }) {
                       Upcoming
                     </Badge>
                   )}
+
+                  <h2 className="text-lg font-bold mt-1">{exam.courseCode}</h2>
+                  <p className="text-sm text-gray-600 mb-1">
+                    {exam.courseTitle}
+                  </p>
+
                   <p className="text-sm text-gray-600">
                     {examDate} • {examTime}
                   </p>
-                  <h2 className="text-lg font-bold mt-1">{exam.courseCode}</h2>
-                  <p className="text-sm text-gray-600 mb-1">{exam.courseTitle}</p>
                   <p className="text-gray-700">{hallName}</p>
-                  {examDate !== 'TBD' && (
+
+                  {examDate !== "TBD" && (
                     <p className="text-xs text-gray-500 mt-2">
                       Session: {exam.timeTableSession}
+                    </p>
+                  )}
+                  {exam.faculty && (
+                    <p className="text-xs text-gray-500">
+                      Faculty: {exam.faculty}
                     </p>
                   )}
                 </div>

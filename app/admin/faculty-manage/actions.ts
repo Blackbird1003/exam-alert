@@ -59,8 +59,74 @@ export async function createFaculty(name: string) {
 
 export async function deleteFaculty(id: string) {
     try {
-        await prisma.faculty.delete({
-            where: { id },
+        // Use transaction to ensure all related data is deleted properly
+        await prisma.$transaction(async (tx) => {
+            // Get all timetables for this faculty
+            const timeTables = await tx.timeTable.findMany({
+                where: { facultyId: id },
+                include: {
+                    courses: {
+                        include: {
+                            examSessions: true
+                        }
+                    }
+                }
+            });
+
+            // Delete all exam sessions for all courses in all timetables
+            for (const timeTable of timeTables) {
+                for (const course of timeTable.courses) {
+                    if (course.examSessions.length > 0) {
+                        await tx.courseExamSession.deleteMany({
+                            where: { courseId: course.id }
+                        });
+                    }
+                }
+            }
+
+            // Delete all courses in all timetables
+            for (const timeTable of timeTables) {
+                await tx.timeTableCourse.deleteMany({
+                    where: { timeTableId: timeTable.id }
+                });
+            }
+
+            // Delete all timetables
+            await tx.timeTable.deleteMany({
+                where: { facultyId: id }
+            });
+
+            // Delete all notifications related to this faculty
+            await tx.notification.deleteMany({
+                where: {
+                    OR: [
+                        {
+                            recipient: {
+                                faculty: {
+                                    contains: id,
+                                    mode: 'insensitive'
+                                }
+                            }
+                        },
+                        {
+                            message: {
+                                contains: id,
+                                mode: 'insensitive'
+                            }
+                        }
+                    ]
+                }
+            });
+
+            // Delete all faculty halls
+            await tx.facultyHall.deleteMany({
+                where: { facultyId: id }
+            });
+
+            // Finally delete the faculty
+            await tx.faculty.delete({
+                where: { id }
+            });
         });
 
         revalidatePath("/admin/faculty-manage");
@@ -72,7 +138,7 @@ export async function deleteFaculty(id: string) {
         console.error("Error deleting faculty:", error);
         return {
             success: false,
-            message: "Failed to delete faculty",
+            message: "Failed to delete faculty. Please try again.",
         };
     }
 }
@@ -104,6 +170,27 @@ export async function addFacultyHall(facultyId: string, name: string, maxCapacit
 
 export async function deleteFacultyHall(id: string) {
     try {
+        // Check if hall is being used in any scheduled exams
+        const coursesUsingHall = await prisma.timeTableCourse.findMany({
+            where: { hallId: id },
+            include: {
+                examSessions: {
+                    where: { hallId: id }
+                }
+            }
+        });
+
+        const examSessionsUsingHall = await prisma.courseExamSession.findMany({
+            where: { hallId: id }
+        });
+
+        if (coursesUsingHall.length > 0 || examSessionsUsingHall.length > 0) {
+            return {
+                success: false,
+                message: "Cannot delete hall. It is currently being used for scheduled exams. Please reschedule or clear the exams first.",
+            };
+        }
+
         await prisma.facultyHall.delete({
             where: { id },
         });
@@ -117,7 +204,7 @@ export async function deleteFacultyHall(id: string) {
         console.error("Error deleting hall:", error);
         return {
             success: false,
-            message: "Failed to delete hall",
+            message: "Failed to delete hall. It may be in use by scheduled exams.",
         };
     }
 }
@@ -152,8 +239,51 @@ export async function createTimeTable(facultyId: string, name: string, session: 
 
 export async function deleteTimeTable(id: string) {
     try {
-        await prisma.timeTable.delete({
-            where: { id },
+        // Use transaction to ensure all related data is deleted properly
+        await prisma.$transaction(async (tx) => {
+            // Get all courses for this timetable
+            const courses = await tx.timeTableCourse.findMany({
+                where: { timeTableId: id },
+                include: {
+                    examSessions: true
+                }
+            });
+
+            // Delete all exam sessions for all courses in this timetable
+            for (const course of courses) {
+                if (course.examSessions.length > 0) {
+                    await tx.courseExamSession.deleteMany({
+                        where: { courseId: course.id }
+                    });
+                }
+            }
+
+            // Delete all courses in this timetable
+            await tx.timeTableCourse.deleteMany({
+                where: { timeTableId: id }
+            });
+
+            // Delete notifications related to this timetable
+            await tx.notification.deleteMany({
+                where: {
+                    OR: [
+                        {
+                            message: {
+                                contains: `TIMETABLE_NOTIFICATION:${id}`,
+                                mode: 'insensitive'
+                            }
+                        },
+                        {
+                            recipientId: `TIMETABLE_${id}`
+                        }
+                    ]
+                }
+            });
+
+            // Finally delete the timetable
+            await tx.timeTable.delete({
+                where: { id }
+            });
         });
 
         revalidatePath("/admin/faculty-manage");
@@ -165,7 +295,7 @@ export async function deleteTimeTable(id: string) {
         console.error("Error deleting timetable:", error);
         return {
             success: false,
-            message: "Failed to delete timetable",
+            message: "Failed to delete timetable. Please try again.",
         };
     }
 }
@@ -205,8 +335,17 @@ export async function addCourseToTimeTable(
 
 export async function deleteCourse(id: string) {
     try {
-        await prisma.timeTableCourse.delete({
-            where: { id },
+        // Use transaction to ensure all related data is deleted properly
+        await prisma.$transaction(async (tx) => {
+            // Delete all exam sessions for this course
+            await tx.courseExamSession.deleteMany({
+                where: { courseId: id }
+            });
+
+            // Delete the course
+            await tx.timeTableCourse.delete({
+                where: { id }
+            });
         });
 
         revalidatePath("/admin/faculty-manage");
@@ -218,7 +357,7 @@ export async function deleteCourse(id: string) {
         console.error("Error deleting course:", error);
         return {
             success: false,
-            message: "Failed to delete course",
+            message: "Failed to delete course. Please try again.",
         };
     }
 }
@@ -337,35 +476,58 @@ export async function autoScheduleExams(timeTableId: string) {
             };
         }
 
-        const scheduledCourses = [];
+        const scheduledCourses: string[] = [];
 
         for (const course of coursesToSchedule) {
             const studentsToSchedule = course.numberOfStudents;
             let remainingStudents = studentsToSchedule;
             let sessionNumber = 1;
-            const examSessions: { hallId: string; examDate: Date; examTime: string; studentsAssigned: number; sessionNumber: number; hallName: string }[] = [];
+            const examSessions: { 
+                hallId: string; 
+                examDate: Date; 
+                examTime: string; 
+                studentsAssigned: number; 
+                sessionNumber: number; 
+                hallName: string 
+            }[] = [];
 
             console.log(`Scheduling course ${course.courseCode} with ${studentsToSchedule} students`);
 
             // Try to schedule all students for this course
             while (remainingStudents > 0) {
-                let bestSlot: any = null;
+                let foundSlot = false;
+                let selectedHall: typeof halls[0] | null = null;
+                let selectedDate: Date | null = null;
+                let selectedTime: string | null = null;
+                let studentsCanFit: number = 0;
 
                 const tempDate = new Date(startDate);
                 let attempts = 0;
                 const maxAttempts = 50;
 
                 // Find the best available slot
-                while (!bestSlot && attempts < maxAttempts) {
+                while (!foundSlot && attempts < maxAttempts) {
                     for (const timeSlot of examTimes) {
                         for (const hall of halls) {
-                            // Check if hall is available at this time
+                            // Check if hall is available at this time - check timeTableCourse conflicts
                             const conflictingCourse = await prisma.timeTableCourse.findFirst({
                                 where: {
                                     hallId: hall.id,
                                     examDate: tempDate,
                                     examTime: timeSlot,
                                     NOT: { id: course.id }
+                                }
+                            });
+
+                            // FIXED: Check for conflicts in CourseExamSession table
+                            const conflictingExamSession = await prisma.courseExamSession.findFirst({
+                                where: {
+                                    hallId: hall.id,
+                                    examDate: tempDate,
+                                    examTime: timeSlot,
+                                    course: {
+                                        NOT: { id: course.id }
+                                    }
                                 }
                             });
 
@@ -376,23 +538,22 @@ export async function autoScheduleExams(timeTableId: string) {
                                 session.examTime === timeSlot
                             );
 
-                            if (!conflictingCourse && !existingSession) {
-                                const studentsCanFit = Math.min(remainingStudents, hall.maxCapacity);
+                            if (!conflictingCourse && !conflictingExamSession && !existingSession) {
+                                const canFit = Math.min(remainingStudents, hall.maxCapacity);
                                 
                                 // Prefer halls that can fit more students
-                                if (!bestSlot || studentsCanFit > bestSlot.studentsCanFit) {
-                                    bestSlot = {
-                                        hall: hall,
-                                        date: new Date(tempDate),
-                                        time: timeSlot,
-                                        studentsCanFit: studentsCanFit
-                                    };
+                                if (!foundSlot || canFit > studentsCanFit) {
+                                    selectedHall = hall;
+                                    selectedDate = new Date(tempDate);
+                                    selectedTime = timeSlot;
+                                    studentsCanFit = canFit;
+                                    foundSlot = true;
                                 }
                             }
                         }
                     }
 
-                    if (!bestSlot) {
+                    if (!foundSlot) {
                         // Move to next day
                         tempDate.setDate(tempDate.getDate() + 1);
                         
@@ -404,33 +565,33 @@ export async function autoScheduleExams(timeTableId: string) {
                     }
                 }
 
-                if (bestSlot) {
+                if (foundSlot && selectedHall && selectedDate && selectedTime) {
                     // Create exam session
                     await prisma.courseExamSession.create({
                         data: {
                             courseId: course.id,
-                            hallId: bestSlot.hall.id,
-                            examDate: bestSlot.date,
-                            examTime: bestSlot.time,
+                            hallId: selectedHall.id,
+                            examDate: selectedDate,
+                            examTime: selectedTime,
                             duration: examDuration,
-                            studentsAssigned: bestSlot.studentsCanFit,
+                            studentsAssigned: studentsCanFit,
                             sessionNumber: sessionNumber
                         }
                     });
 
                     examSessions.push({
-                        hallId: bestSlot.hall.id,
-                        examDate: bestSlot.date,
-                        examTime: bestSlot.time,
-                        studentsAssigned: bestSlot.studentsCanFit,
+                        hallId: selectedHall.id,
+                        examDate: selectedDate,
+                        examTime: selectedTime,
+                        studentsAssigned: studentsCanFit,
                         sessionNumber: sessionNumber,
-                        hallName: bestSlot.hall.name
+                        hallName: selectedHall.name
                     });
 
-                    remainingStudents -= bestSlot.studentsCanFit;
+                    remainingStudents -= studentsCanFit;
                     sessionNumber++;
 
-                    console.log(`Session ${sessionNumber - 1} for ${course.courseCode}: ${bestSlot.studentsCanFit} students in ${bestSlot.hall.name} on ${bestSlot.date.toISOString().split('T')[0]} at ${bestSlot.time}`);
+                    console.log(`Session ${sessionNumber - 1} for ${course.courseCode}: ${studentsCanFit} students in ${selectedHall.name} on ${selectedDate.toISOString().split('T')[0]} at ${selectedTime}`);
                 } else {
                     scheduleConflicts.push(`Course ${course.courseCode}: Unable to schedule ${remainingStudents} remaining students after ${maxAttempts} attempts`);
                     break;
@@ -463,32 +624,30 @@ export async function autoScheduleExams(timeTableId: string) {
         const scheduledCount = scheduledCourses.length;
         const emailResults = { successful: 0, failed: 0, total: 0 };
         
-        // Send emails for successfully scheduled courses if any were scheduled
+        // Send timetable-based email notifications
         if (scheduledCount > 0) {
             try {
-                const { sendCourseExamNotification } = await import("../email-notifications/actions");
+                // Import the timetable notification function
+                const { sendTimetableExamNotification } = await import("../email-notifications/actions");
                 
-                const emailPromises = scheduledCourses.map(async (courseId) => {
-                    return await sendCourseExamNotification(courseId, "SCHEDULE", "Your exam has been scheduled. Please review the details below.");
-                });
-
-                const emailResponses = await Promise.all(emailPromises);
+                const emailResponse = await sendTimetableExamNotification(timeTableId, "SCHEDULE", "Your exam timetable has been finalized. Please review all exam details below.");
                 
-                // Calculate email statistics
-                emailResults.total = emailResponses.length;
-                emailResults.successful = emailResponses.filter(response => response.success).reduce((sum, response) => sum + (response.stats?.successful || 0), 0);
-                emailResults.failed = emailResponses.filter(response => response.success).reduce((sum, response) => sum + (response.stats?.failed || 0), 0);
+                if (emailResponse.success) {
+                    emailResults.total = 1;
+                    emailResults.successful = emailResponse.stats?.successful || 0;
+                    emailResults.failed = emailResponse.stats?.failed || 0;
+                }
 
-                console.log(`Email notifications sent: ${emailResults.successful} successful, ${emailResults.failed} failed`);
+                console.log(`Timetable email notifications sent: ${emailResults.successful} successful, ${emailResults.failed} failed`);
             } catch (emailError) {
-                console.error("Failed to send email notifications:", emailError);
+                console.error("Failed to send timetable email notifications:", emailError);
                 scheduleConflicts.push("Email notifications could not be sent automatically");
             }
         }
 
         const message = scheduleConflicts.length > 0
-            ? `Auto-scheduling completed: ${scheduledCount} courses scheduled, ${scheduleConflicts.length} issues found. Emails sent to ${emailResults.successful} students.`
-            : `All ${scheduledCount} exams scheduled successfully across multiple halls where needed! Email notifications sent to ${emailResults.successful} students.`;
+            ? `Auto-scheduling completed: ${scheduledCount} courses scheduled, ${scheduleConflicts.length} issues found. Notifications sent to ${emailResults.successful} students.`
+            : `All ${scheduledCount} exams scheduled successfully across multiple halls where needed! Timetable notifications sent to ${emailResults.successful} students.`;
 
         return {
             success: true,
@@ -510,30 +669,35 @@ export async function autoScheduleExams(timeTableId: string) {
 
 export async function clearExamSchedule(timeTableId: string) {
     try {
-        // Get all courses for this timetable
-        const courses = await prisma.timeTableCourse.findMany({
-            where: { timeTableId },
-            select: { id: true }
-        });
+        // Use transaction to ensure all related data is cleared properly
+        await prisma.$transaction(async (tx) => {
+            // Get all courses for this timetable
+            const courses = await tx.timeTableCourse.findMany({
+                where: { timeTableId },
+                select: { id: true }
+            });
 
-        // Delete all exam sessions for these courses
-        await prisma.courseExamSession.deleteMany({
-            where: {
-                courseId: {
-                    in: courses.map(course => course.id)
-                }
+            if (courses.length > 0) {
+                // Delete all exam sessions for these courses
+                await tx.courseExamSession.deleteMany({
+                    where: {
+                        courseId: {
+                            in: courses.map(course => course.id)
+                        }
+                    }
+                });
+
+                // Clear the main course schedule fields
+                await tx.timeTableCourse.updateMany({
+                    where: { timeTableId },
+                    data: {
+                        examDate: null,
+                        examTime: null,
+                        duration: null,
+                        hallId: null,
+                    },
+                });
             }
-        });
-
-        // Clear the main course schedule fields
-        await prisma.timeTableCourse.updateMany({
-            where: { timeTableId },
-            data: {
-                examDate: null,
-                examTime: null,
-                duration: null,
-                hallId: null,
-            },
         });
 
         revalidatePath("/admin/faculty-manage");
@@ -545,7 +709,7 @@ export async function clearExamSchedule(timeTableId: string) {
         console.error("Error clearing exam schedule:", error);
         return {
             success: false,
-            message: "Failed to clear exam schedule",
+            message: "Failed to clear exam schedule. Please try again.",
         };
     }
 }

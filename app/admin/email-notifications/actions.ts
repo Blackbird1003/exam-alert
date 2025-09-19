@@ -3,6 +3,9 @@
 import prisma from "@/lib/prisma";
 import { emailService, NotificationData } from "@/lib/email";
 import { NotificationType } from "@/app/generated/prisma";
+import { Prisma } from "@/app/generated/prisma";
+
+
 
 export interface SendNotificationData {
   type: NotificationType;
@@ -28,10 +31,164 @@ export interface NotificationLog {
   createdAt: Date;
 }
 
+// NEW FUNCTION: Send timetable-based notification (sends to each student individually but logs as timetable)
+export async function sendTimetableExamNotification(
+    timeTableId: string,
+    notificationType: "SCHEDULE" | "UPDATE" | "CANCEL",
+    customMessage?: string
+) {
+    try {
+        // Get timetable with all related data
+        const timetable = await prisma.timeTable.findUnique({
+            where: { id: timeTableId },
+            include: {
+                faculty: true,
+                courses: {
+                    include: {
+                        hall: true,
+                        examSessions: {
+                            include: {
+                                hall: true
+                            },
+                            orderBy: {
+                                sessionNumber: 'asc'
+                            }
+                        }
+                    },
+                    orderBy: [
+                        { examDate: 'asc' },
+                        { examTime: 'asc' },
+                        { courseCode: 'asc' }
+                    ]
+                }
+            }
+        });
+
+        if (!timetable) {
+            return {
+                success: false,
+                message: "Timetable not found",
+                stats: { successful: 0, failed: 0 }
+            };
+        }
+
+        // Get all students for this faculty
+        const students = await prisma.student.findMany({
+            where: {
+                faculty: {
+                    contains: timetable.faculty.name,
+                    mode: 'insensitive'
+                }
+            }
+        });
+
+        if (students.length === 0) {
+            return {
+                success: false,
+                message: "No students found for this faculty",
+                stats: { successful: 0, failed: 0 }
+            };
+        }
+
+        // Generate timetable email subject
+        const emailSubject = `${notificationType === 'SCHEDULE' ? 'Exam Schedule Released' : notificationType === 'UPDATE' ? 'Exam Schedule Updated' : 'Exam Cancelled'} - ${timetable.name}`;
+        
+        const coursesWithSchedule = timetable.courses.filter(course => 
+            course.examDate && course.examTime && course.hall
+        );
+
+        if (coursesWithSchedule.length === 0) {
+            return {
+                success: false,
+                message: "No scheduled exams found in this timetable",
+                stats: { successful: 0, failed: 0 }
+            };
+        }
+
+        let successful = 0;
+        let failed = 0;
+
+        // Send individual emails to each student
+        const emailPromises = students.map(async (student) => {
+            try {
+                // Prepare notification data for the entire timetable
+                const notificationData: NotificationData = {
+                    studentName: `${student.firstName} ${student.lastName}`,
+                    courseTitle: `${timetable.name} - Complete Exam Schedule`,
+                    examDate: timetable.examStartDate?.toLocaleDateString() || "TBD",
+                    examTime: "Multiple Sessions",
+                    examVenue: "Various Halls",
+                    faculty: timetable.faculty.name,
+                    matricNumber: student.matricNumber,
+                };
+
+                // Send individual email to each student
+                const result = await emailService.sendNotificationEmail(
+                    notificationType as NotificationType,
+                    student.email,
+                    notificationData,
+                    customMessage || `Your complete exam timetable for ${timetable.name} has been finalized. Please check all your course schedules.`
+                );
+
+                if (result.success) {
+                    successful++;
+                } else {
+                    failed++;
+                }
+
+                return { success: result.success, email: student.email };
+            } catch (error) {
+                console.error(`Failed to send email to ${student.email}:`, error);
+                failed++;
+                return { success: false, email: student.email, error: error instanceof Error ? error.message : 'Unknown error' };
+            }
+        });
+
+        await Promise.all(emailPromises);
+
+        // Create ONE notification log entry for the entire timetable
+        if (successful > 0 || failed > 0) {
+            try {
+                // Use the first student's ID as the recipient (required by schema) but we'll modify the display
+                const firstStudentId = students[0]?.id;
+                
+                if (firstStudentId) {
+                    await prisma.notification.create({
+                        data: {
+                            recipientId: firstStudentId,
+                            type: notificationType as NotificationType,
+                            subject: emailSubject,
+                            message: `TIMETABLE_NOTIFICATION:${timeTableId}:${successful + failed} students notified for ${timetable.name} - ${successful} successful, ${failed} failed`,
+                            status: failed === 0 ? "sent" : successful > 0 ? "partial" : "failed",
+                            sentAt: successful > 0 ? new Date() : null,
+                        }
+                    });
+                }
+            } catch (logError) {
+                console.error("Failed to create notification log:", logError);
+            }
+        }
+
+        return {
+            success: successful > 0,
+            message: `Timetable notification sent to ${successful} students successfully, ${failed} failed`,
+            stats: { successful, failed }
+        };
+
+    } catch (error) {
+        console.error("Error sending timetable notifications:", error);
+        return {
+            success: false,
+            message: "Failed to send timetable notifications",
+            stats: { successful: 0, failed: 0 }
+        };
+    }
+}
+
 export async function sendBulkNotification(data: SendNotificationData) {
   try {
     // Build the where clause for filtering students
-    const whereClause: any = {};
+ const whereClause: Prisma.StudentWhereInput = {};
     
     if (data.recipientFilters.faculty) {
       whereClause.faculty = data.recipientFilters.faculty;
@@ -92,7 +249,7 @@ export async function sendBulkNotification(data: SendNotificationData) {
     const emailPromises = students.map(async (student, index) => {
       const notificationData: NotificationData = {
         studentName: `${student.firstName} ${student.lastName}`,
-        courseTitle: "General Notification", // This would be dynamic in a real course-specific notification
+        courseTitle: "General Notification",
         examDate: "TBD",
         examTime: "TBD",
         examVenue: "TBD",
@@ -300,7 +457,7 @@ export async function getNotificationLogs(filters: {
   offset?: number;
 }): Promise<{ success: boolean; data?: NotificationLog[]; total?: number; message?: string }> {
   try {
-    const whereClause: any = {};
+    const whereClause: Prisma.NotificationWhereInput = {};
 
     // Build filters
     if (filters.type) {
@@ -355,17 +512,40 @@ export async function getNotificationLogs(filters: {
       skip: filters.offset || 0,
     });
 
-    const logs: NotificationLog[] = notifications.map(notification => ({
-      id: notification.id,
-      recipientEmail: notification.recipient.email,
-      recipientName: `${notification.recipient.firstName} ${notification.recipient.lastName}`,
-      type: notification.type,
-      subject: notification.subject,
-      message: notification.message,
-      status: notification.status,
-      sentAt: notification.sentAt,
-      createdAt: notification.createdAt,
-    }));
+    const logs: NotificationLog[] = notifications.map(notification => {
+      // Check if this is a timetable notification
+      if (notification.message.startsWith('TIMETABLE_NOTIFICATION:')) {
+        // Extract info from the special message format
+        const messageParts = notification.message.split(':');
+        const studentCount = notification.message.match(/(\d+) students notified/)?.[1] || '0';
+        const timetableName = notification.message.match(/for (.+?) - /)?.[1] || 'Timetable';
+        
+        return {
+          id: notification.id,
+          recipientEmail: `${studentCount} students`,
+          recipientName: timetableName,
+          type: notification.type,
+          subject: notification.subject,
+          message: notification.message.split(' - ')[1] || notification.message, // Show the summary part
+          status: notification.status,
+          sentAt: notification.sentAt,
+          createdAt: notification.createdAt,
+        };
+      } else {
+        // Regular individual student notifications
+        return {
+          id: notification.id,
+          recipientEmail: notification.recipient.email,
+          recipientName: `${notification.recipient.firstName} ${notification.recipient.lastName}`,
+          type: notification.type,
+          subject: notification.subject,
+          message: notification.message,
+          status: notification.status,
+          sentAt: notification.sentAt,
+          createdAt: notification.createdAt,
+        };
+      }
+    });
 
     return {
       success: true,

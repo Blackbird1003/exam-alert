@@ -22,7 +22,7 @@ export async function getStudentExams() {
         const faculty = await prisma.faculty.findFirst({
             where: { 
                 name: { 
-                    equals: student.faculty, 
+                    contains: student.faculty,
                     mode: 'insensitive' 
                 } 
             },
@@ -45,7 +45,7 @@ export async function getStudentExams() {
         });
 
         if (!faculty) {
-            return { success: false, exams: [], message: "Faculty not found" };
+            return { success: false, exams: [], message: `Faculty "${student.faculty}" not found. Please contact administrator.` };
         }
 
         // Flatten all courses from all timetables
@@ -81,14 +81,14 @@ export async function getStudentExamById(courseId: string) {
         const faculty = await prisma.faculty.findFirst({
             where: { 
                 name: { 
-                    equals: student.faculty, 
+                    contains: student.faculty,
                     mode: 'insensitive' 
                 } 
             }
         });
 
         if (!faculty) {
-            return { success: false, exam: null, message: "Faculty not found" };
+            return { success: false, exam: null, message: `Faculty "${student.faculty}" not found. Please contact administrator.` };
         }
 
         // Find the course and verify it belongs to the student's faculty
@@ -222,7 +222,7 @@ export async function getStudentNotifications() {
     const student = await getStudent();
     
     if (!student) {
-        return { success: false, notifications: [], message: "Not authenticated" };
+        return { success: false, notifications: [], unreadCount: 0, message: "Not authenticated" };
     }
 
     try {
