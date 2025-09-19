@@ -24,8 +24,14 @@ import {
 import { studentLogout } from "@/app/student/actions";
 import { toast } from "sonner";
 
-interface StudentSidebarProps {
-  collapsed?: boolean;
+// components/student-sidebar.tsx
+import { ReactNode } from "react";
+
+export interface StudentSidebarProps {
+  icon: ReactNode;
+  text: string;
+  href: string;
+  collapsed: boolean;
 }
 
 interface NavItem {

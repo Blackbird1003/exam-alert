@@ -15,12 +15,7 @@ export function StudentLayout({ children, className }: StudentLayoutProps) {
 
   return (
     <div className="flex min-h-screen bg-background">
-      <StudentSidebar
-        icon={<PanelLeft />}
-        text="Dashboard"
-        href="/student/dashboard"
-        collapsed={collapsed}
-      />
+      <StudentSidebar collapsed={collapsed} />
 
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Top bar */}
